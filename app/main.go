@@ -14,26 +14,24 @@ type results struct {
 	err      error
 }
 
-// checkURL fetches a single URL and prints whether it is up or down.
-func checkURL(url string, ch chan<- results, wg *sync.WaitGroup) {
-	// 3. Decrement the counter by 1 when this function finishes completely.
+func worker(id int, jobs <-chan string, results chan<- string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	// Configure a quick 5-second timeout so we don't hang forever.
-	client := http.Client{Timeout: 5 * time.Second}
+	client := http.Client{Timeout: 3 * time.Second}
 
-	start := time.Now()
-	resp, err := client.Get(url)
-	duration := time.Since(start)
-
-	if err != nil {
-		ch <- results{url: url, err: err}
-		return
+	// This loop blocks and waits until a job enters the channel.
+	// It automatically terminates when the jobs channel is closed.
+	for url := range jobs {
+		fmt.Printf("[Worker %d] Started checking: %s\n", id, url)
+		resp, err := client.Get(url)
+		if err != nil {
+			results <- fmt.Sprintf("[Worker %d] DOWN: %s (Error: %v)", id, url, err)
+			continue
+		}
+		resp.Body.Close()
+		results <- fmt.Sprintf("[Worker %d] UP  : %s (Status: %d)", id, url, resp.StatusCode)
 	}
 
-	// Clean up the network connection resource.
-	defer resp.Body.Close()
-	ch <- results{url: url, status: resp.StatusCode, duration: duration}
 }
 
 func main() {
@@ -47,29 +45,33 @@ func main() {
 
 	// Create a WaitGroup to track our background workers.
 	var wg sync.WaitGroup
-	ch := make(chan results)
+	jobs := make(chan string, len(urls))    // Buffered channel to hold results from workers.
+	results := make(chan string, len(urls)) // Buffered channel to hold results from workers.
+	numberOfWorkers := 3
+
+	// Start a fixed number of worker Goroutines.
 
 	fmt.Printf("Starting concurrent URL checks...")
 	totalStart := time.Now()
 
-	for _, url := range urls {
-		// 1. Increment the WaitGroup counter for each worker we start.
+	for w := 1; w <= numberOfWorkers; w++ {
 		wg.Add(1)
-		// 2. The 'go' keyword spins up a concurrent Goroutine instantly.
-		go checkURL(url, ch, &wg)
+		go worker(w, jobs, results, &wg)
 	}
 
+	for _, url := range urls {
+		jobs <- url
+	}
+
+	close(jobs)
+
 	go func() {
-		wg.Wait() // 4. Block execution here until the WaitGroup counter drops back down to 0.
-		close(ch) // Close the tube so the receiver knows no more data is coming.
+		wg.Wait()      // 4. Block execution here until the WaitGroup counter drops back down to 0.
+		close(results) // Close the tube so the receiver knows no more data is coming.
 	}()
 
-	for res := range ch {
-		if res.err != nil {
-			fmt.Printf("[DOWN] %s (Error: %v)\n", res.url, res.err)
-		} else {
-			fmt.Printf("[UP]   %s (Status: %d, Time: %v)\n", res.url, res.status, res.duration)
-		}
+	for res := range results {
+		fmt.Println(res)
 	}
 
 	fmt.Printf("\nAll checks completed in %v!\n", time.Since(totalStart))
