@@ -1,0 +1,5 @@
+Worker 2 successfully pinged https://google.com (Status: 200)
+[Worker 1] DOWN: https://facebook.com (Error: Get "https://www.facebook.com/": context deadline exceeded (Client.Timeout exceeded while awaiting headers))
+[Worker 2] DOWN: https://google.com (Error: Get "https://www.google.com/": context deadline exceeded (Client.Timeout exceeded while awaiting headers))
+[Worker 3] UP  : https://google.com (Status: 200)
+[Worker 1] UP  : https://facebook.com (Status: 200)
