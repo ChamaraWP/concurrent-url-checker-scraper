@@ -26,6 +26,7 @@ func main() {
 	var wg sync.WaitGroup
 	numberOfWorkers := 3
 
+	// 1. Fire up the background workers
 	for w := 1; w <= numberOfWorkers; w++ {
 		wg.Add(1)
 		go monitor.StartWorker(ctx, w, jobs, results, &wg) // Capitalized means Public/Exported
@@ -35,6 +36,31 @@ func main() {
 	// Spin up exactly ONE background thread to own the log file.
 	// We pass it the 'results' channel out-end, and the target file name.
 	go monitor.StartFileLogger(results, "urls.txt")
+
+	go func() {
+		// Create a ticker that fires an event every 10 seconds
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop() // Clean up ticker memory when this background function finishes
+
+		monitoredSites := []string{
+			"https://google.com",
+			"https://github.com",
+			"https://go.dev",
+		}
+
+		for {
+			select {
+			case <-ctx.Done(): // If the global shutdown switch flips, exit the clock loop
+				return
+			case <-ticker.C: // Every 10 seconds, send the monitored sites into the jobs channe
+				fmt.Println("\n⏰ Internal Heartbeat: Dispatching automated checks...")
+				for _, url := range monitoredSites {
+					jobs <- url
+				}
+
+			}
+		}
+	}()
 
 	// 4. Initialize our HTTP server routes, passing it the 'jobs' channel
 	// so the API endpoints can feed the workers dynamically.
